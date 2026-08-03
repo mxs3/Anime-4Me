@@ -132,23 +132,36 @@ async function extractDetails(url) {
 
 
 async function extractEpisodes(url) {
-    const results = [];
+    console.log('Extracting episodes from: ' + url);
 
+    const results = [];
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const regex = /<div class="ep_num">\s*<a href="([^"]+)">\s*الحلقة\s*(\d+)/g;
+    // استخراج منطقة الحلقات فقط
+    const episodesSection = html.match(
+        /<div[^>]+id="episodesList"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/
+    );
+
+    if (!episodesSection) {
+        console.log("No episodes section found");
+        return JSON.stringify(results);
+    }
+
+    const episodesHtml = episodesSection[1];
+
+    const regex = /<div class="ep_num">[\s\S]*?<a href="([^"]+)"[^>]*>[\s\S]*?الحلقة\s*(\d+)/g;
 
     let match;
 
-    while ((match = regex.exec(html)) !== null) {
+    while ((match = regex.exec(episodesHtml)) !== null) {
         results.push({
-            href: match[1].trim(),
-            number: parseInt(match[2], 10)
+            href: match[1],
+            number: parseInt(match[2])
         });
     }
 
-    console.log(`Episodes: ${JSON.stringify(results)}`);
+    console.log(`Episodes Found: ${results.length}`);
 
     return JSON.stringify(results);
 }
