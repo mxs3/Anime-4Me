@@ -143,28 +143,50 @@ async function extractEpisodes(url) {
             return JSON.stringify(episodes);
         }
 
-        const episodeRegex = /href="([^"]+)"[\s\S]*?الحلقة\s*(\d+)/g;
+        const seasonUrlRegex = /<li\s+data-number='[^']*'>\s*<a\s+href='([^']+)'/g;
+        const seasonUrls = [...html.matchAll(seasonUrlRegex)].map(match => match[1]);
 
-        for (const match of html.matchAll(episodeRegex)) {
-            episodes.push({
-                number: parseInt(match[2]),
-                href: match[1]
-            });
+        // لو مفيش مواسم اشتغل على الصفحة نفسها
+        if (seasonUrls.length === 0) {
+            seasonUrls.push(url);
         }
 
-        // حذف التكرار
+        for (const seasonUrl of seasonUrls) {
+            const seasonResponse = await fetchv2(seasonUrl);
+            const seasonHtml = typeof seasonResponse === 'object' ? await seasonResponse.text() : await seasonResponse;
+
+            // استخراج الحلقة ورابطها
+            const episodeRegex = /الحلقة\s*(\d+)[\s\S]*?href="([^"]+)"/g;
+
+            for (const match of seasonHtml.matchAll(episodeRegex)) {
+                const number = Number(match[1]);
+
+                if (!isNaN(number)) {
+                    episodes.push({
+                        number: number,
+                        href: match[2]
+                    });
+                }
+            }
+        }
+
+        // إزالة التكرار
         const uniqueEpisodes = [];
         const seen = new Set();
 
         for (const ep of episodes) {
-            if (!seen.has(ep.href)) {
-                seen.add(ep.href);
+            const key = ep.number + "-" + ep.href;
+
+            if (!seen.has(key)) {
+                seen.add(key);
                 uniqueEpisodes.push(ep);
             }
         }
 
-        // ترتيب رقمي للحلقات
-        uniqueEpisodes.sort((a, b) => a.number - b.number);
+        // ترتيب من الحلقة 1 إلى النهاية
+        uniqueEpisodes.sort((a, b) => {
+            return a.number - b.number;
+        });
 
         return JSON.stringify(uniqueEpisodes);
 
