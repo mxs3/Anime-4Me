@@ -134,54 +134,45 @@ async function extractDetails(url) {
 async function extractEpisodes(url) {
     console.log('Extracting episodes from: ' + url);
 
+    const episodes = [];
+
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const episodes = [];
+    const blocks = html.match(/<div class="anime-card-themex">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g);
 
-    const regex = /<div class="ep_num">\s*<a href="([^"]+)">\s*([\s\S]*?)\s*<\/a>\s*<\/div>[\s\S]*?<img[^>]+data-image="([^"]+)"/g;
-
-    let match;
-
-    while ((match = regex.exec(html)) !== null) {
-
-        const title = match[2]
-            .replace(/<[^>]+>/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        episodes.push({
-            title: title,
-            href: match[1].trim(),
-            image: match[3].trim()
-        });
+    if (!blocks) {
+        console.log("No episodes found");
+        return JSON.stringify(episodes);
     }
 
+    blocks.forEach(block => {
 
-    // احتياط لو الصورة مش موجودة أو تغير ترتيبها
-    if (episodes.length === 0) {
+        const hrefMatch = block.match(
+            /<div class="ep_num">[\s\S]*?<a href="([^"]+)"/
+        );
 
-        const fallbackRegex = /<div class="ep_num">\s*<a href="([^"]+)">\s*([\s\S]*?)\s*<\/a>/g;
+        const titleMatch = block.match(
+            /<div class="ep_num">[\s\S]*?<a href="[^"]+">\s*([^<]+)/
+        );
 
-        let fallback;
+        if (hrefMatch && titleMatch) {
 
-        while ((fallback = fallbackRegex.exec(html)) !== null) {
+            const title = titleMatch[1]
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const numberMatch = title.match(/\d+/);
 
             episodes.push({
-                title: fallback[2]
-                    .replace(/<[^>]+>/g, '')
-                    .replace(/\s+/g, ' ')
-                    .trim(),
-
-                href: fallback[1].trim(),
-
-                image: ''
+                title: title,
+                href: hrefMatch[1].trim(),
+                number: numberMatch ? parseInt(numberMatch[0]) : 0
             });
         }
-    }
+    });
 
-
-    console.log(`Episodes: ${episodes.length}`);
+    console.log(`Episodes Found: ${episodes.length}`);
 
     return JSON.stringify(episodes);
 }
