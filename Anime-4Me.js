@@ -132,40 +132,50 @@ async function extractDetails(url) {
 
 
 async function extractEpisodes(url) {
+    console.log('Extracting episodes from: ' + url);
+
     const response = await soraFetch(url);
     const html = await response.text();
 
     const episodes = [];
 
-    const regex = /<div class="ep_num">[\s\S]*?<a href="([^"]+)">[\s\S]*?(الحلقة\s*\d+)[\s\S]*?<\/a>[\s\S]*?data-image="([^"]+)"/g;
+    const regex = /<div class="ep_num">\s*<a href="([^"]+)">\s*([\s\S]*?)\s*<\/a>\s*<\/div>[\s\S]*?<img[^>]+data-image="([^"]+)"/g;
 
     let match;
 
     while ((match = regex.exec(html)) !== null) {
 
+        const title = match[2]
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
         episodes.push({
-            title: match[2].trim(),
+            title: title,
             href: match[1].trim(),
             image: match[3].trim()
         });
     }
 
 
-    // طريقة احتياطية لو تغير ترتيب الصورة
+    // احتياط لو الصورة مش موجودة أو تغير ترتيبها
     if (episodes.length === 0) {
 
-        const fallback = /<div class="ep_num">[\s\S]*?<a href="([^"]+)">([\s\S]*?)<\/a>/g;
+        const fallbackRegex = /<div class="ep_num">\s*<a href="([^"]+)">\s*([\s\S]*?)\s*<\/a>/g;
 
-        let ep;
+        let fallback;
 
-        while ((ep = fallback.exec(html)) !== null) {
+        while ((fallback = fallbackRegex.exec(html)) !== null) {
 
             episodes.push({
-                title: ep[2]
-                    .replace(/<[^>]+>/g, "")
+                title: fallback[2]
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/\s+/g, ' ')
                     .trim(),
-                href: ep[1].trim(),
-                image: ""
+
+                href: fallback[1].trim(),
+
+                image: ''
             });
         }
     }
@@ -173,5 +183,5 @@ async function extractEpisodes(url) {
 
     console.log(`Episodes: ${episodes.length}`);
 
-    return episodes;
+    return JSON.stringify(episodes);
 }
