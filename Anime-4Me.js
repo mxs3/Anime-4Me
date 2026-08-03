@@ -132,45 +132,34 @@ async function extractDetails(url) {
 
 
 async function extractEpisodes(url) {
-    console.log('Extracting episodes from: ' + url);
+    console.log("Extracting episodes from: " + url);
 
     const episodes = [];
 
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const blocks = html.match(/<div class="anime-card-themex">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g);
+    const episodeRegex = /<div class="anime-card-themex">[\s\S]*?<div class="ep_num">[\s\S]*?<a href="([^"]+)">([\s\S]*?)<\/a>[\s\S]*?<img[^>]*data-image="([^"]+)"/g;
 
-    if (!blocks) {
-        console.log("No episodes found");
-        return JSON.stringify(episodes);
+    let match;
+
+    while ((match = episodeRegex.exec(html)) !== null) {
+
+        const href = match[1].trim();
+
+        const episodeText = match[2]
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const image = match[3].trim();
+
+        episodes.push({
+            title: episodeText,
+            href: href,
+            image: image
+        });
     }
-
-    blocks.forEach(block => {
-
-        const hrefMatch = block.match(
-            /<div class="ep_num">[\s\S]*?<a href="([^"]+)"/
-        );
-
-        const titleMatch = block.match(
-            /<div class="ep_num">[\s\S]*?<a href="[^"]+">\s*([^<]+)/
-        );
-
-        if (hrefMatch && titleMatch) {
-
-            const title = titleMatch[1]
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            const numberMatch = title.match(/\d+/);
-
-            episodes.push({
-                title: title,
-                href: hrefMatch[1].trim(),
-                number: numberMatch ? parseInt(numberMatch[0]) : 0
-            });
-        }
-    });
 
     console.log(`Episodes Found: ${episodes.length}`);
 
