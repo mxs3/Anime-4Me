@@ -132,36 +132,23 @@ async function extractDetails(url) {
 
 
 async function extractEpisodes(url) {
-    console.log("Extracting episodes from: " + url);
-
-    const episodes = [];
+    const results = [];
 
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const episodeRegex = /<div class="anime-card-themex">[\s\S]*?<div class="ep_num">[\s\S]*?<a href="([^"]+)">([\s\S]*?)<\/a>[\s\S]*?<img[^>]*data-image="([^"]+)"/g;
+    const regex = /<div class="ep_num">\s*<a href="([^"]+)">\s*الحلقة\s*(\d+)/g;
 
     let match;
 
-    while ((match = episodeRegex.exec(html)) !== null) {
-
-        const href = match[1].trim();
-
-        const episodeText = match[2]
-            .replace(/<[^>]+>/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-        const image = match[3].trim();
-
-        episodes.push({
-            title: episodeText,
-            href: href,
-            image: image
+    while ((match = regex.exec(html)) !== null) {
+        results.push({
+            href: match[1].trim(),
+            number: parseInt(match[2], 10)
         });
     }
 
-    console.log(`Episodes Found: ${episodes.length}`);
+    console.log(`Episodes: ${JSON.stringify(results)}`);
 
-    return JSON.stringify(episodes);
+    return JSON.stringify(results);
 }
