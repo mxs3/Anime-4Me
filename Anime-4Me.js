@@ -1,49 +1,45 @@
-function searchResults(html) {
+async function searchResults(keyword) {
     const results = [];
 
-    const itemBlocks = html.match(
-        /<div class="anime-card-themex">[\s\S]*?<h3[\s\S]*?<\/h3>[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g
+    const response = await soraFetch(
+        `https://4i.a8x1c7v.shop/?s=${encodeURIComponent(keyword)}`
     );
 
-    if (!itemBlocks) return results;
+    const html = await response.text();
 
 
-    itemBlocks.forEach(block => {
+    const regex = /<div class="anime-card-themex">[\s\S]*?<img class="img-responsive imgInit"[\s\S]*?data-image="([^"]+)"[\s\S]*?<a href="([^"]+)"[\s\S]*?<h3[^>]*>[\s\S]*?>([\s\S]*?)<\/a>[\s\S]*?<\/h3>/gu;
 
-        const hrefMatch = block.match(
-            /<a href="([^"]+)"/
+
+    let match;
+
+    while ((match = regex.exec(html)) !== null) {
+
+        const image = match[1].trim();
+
+        const href = match[2].trim();
+
+        const title = decodeHTMLEntities(
+            match[3]
+            .replace(/<[^>]*>/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
         );
 
-        const titleMatch = block.match(
-            /<h3[^>]*>\s*<a[^>]*>\s*(.*?)\s*<\/a>/
-        );
 
-        const imgMatch = block.match(
-            /data-image="([^"]+)"/
-        );
-
-
-        if (hrefMatch && titleMatch && imgMatch) {
-
-            const href = hrefMatch[1].trim();
-
-            const title = decodeHTMLEntities(
-                titleMatch[1].trim()
-            );
-
-            const image = imgMatch[1].trim();
-
-
+        if (title && href) {
             results.push({
                 title,
                 image,
                 href
             });
         }
-    });
+    }
 
 
-    return results;
+    console.log(`Search Results: ${JSON.stringify(results)}`);
+
+    return JSON.stringify(results);
 }
 
 
