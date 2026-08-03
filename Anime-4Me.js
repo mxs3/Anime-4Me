@@ -133,68 +133,64 @@ async function extractDetails(url) {
 
 async function extractEpisodes(url) {
     try {
-        const response = await soraFetch(url);
+        const response = await fetchv2(url);
         const html = await response.text();
 
-        const results = [];
+        let episodes = [];
 
-        // أفلام
-        const animeType = html.match(/<div class="anime-info">.*?نوع الأنمي:<\/span>\s*([^<]+)/s);
-
-        if (animeType && animeType[1].includes("Movie")) {
-            return JSON.stringify([
-                {
-                    number: 1,
-                    href: url
-                }
-            ]);
-        }
-
-
-        // استخراج الحلقات
-        const episodeRegex = /<div class="ep_num">\s*<a href="([^"]+)">\s*الحلقة\s*(\d+)/g;
+        // استخراج الحلقات الموجودة
+        const episodeRegex = /<a href="([^"]+\/episode\/[^"]+)".*?[\s\S]*?الحلقة\s*(\d+)/g;
 
         let match;
-
         while ((match = episodeRegex.exec(html)) !== null) {
-            results.push({
+            episodes.push({
                 number: parseInt(match[2]),
                 href: match[1]
             });
         }
 
+        // البحث عن صفحات الحلقات الإضافية
+        const pagesRegex = /href="([^"]+\?ep_order=[^"]+)"/g;
+        let pages = [];
 
-        // لو وجد حلقات
-        if (results.length > 0) {
-            return JSON.stringify(results.reverse());
+        while ((match = pagesRegex.exec(html)) !== null) {
+            pages.push(match[1]);
         }
 
+        // إزالة التكرار
+        pages = [...new Set(pages)];
 
-        // لو صفحة فيها مواسم فقط
-        const seasons = [];
+        for (const page of pages) {
+            const res = await fetchv2(page);
+            const pageHtml = await res.text();
 
-        const seasonRegex = /<a href="(https:\/\/4i\.a8x1c7v\.shop\/anime\/[^"]+)"/g;
-
-        while ((match = seasonRegex.exec(html)) !== null) {
-
-            if (!match[1].includes("/episode/") && match[1] !== url) {
-
-                seasons.push({
-                    number: 0,
+            while ((match = episodeRegex.exec(pageHtml)) !== null) {
+                episodes.push({
+                    number: parseInt(match[2]),
                     href: match[1]
                 });
-
             }
         }
 
 
-        return JSON.stringify(seasons);
+        // إزالة الحلقات المكررة
+        episodes = episodes.filter((ep, index, self) =>
+            index === self.findIndex(
+                x => x.number === ep.number && x.href === ep.href
+            )
+        );
 
 
-    } catch (e) {
+        // ترتيب من الحلقة 1 للأعلى
+        episodes.sort((a,b)=>a.number-b.number);
 
-        console.log("extractEpisodes error:", e);
 
+        console.log("Total Episodes:", episodes.length);
+
+        return JSON.stringify(episodes);
+
+    } catch(e){
+        console.log(e);
         return JSON.stringify([]);
     }
 }
