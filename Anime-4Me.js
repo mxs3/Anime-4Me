@@ -53,68 +53,81 @@ function decodeHTMLEntities(text) {
         .replace(/&gt;/g, '>');
 }
 
+
 async function extractDetails(url) {
+    console.log('Extracting details from: ' + url);
+
     const response = await soraFetch(url);
     const html = await response.text();
 
-    const details = {
-        title: "",
-        image: "",
-        description: "",
-        type: "",
-        episodes: []
-    };
+    const results = [];
 
-    // العنوان
-    let titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/s);
-    if (!titleMatch) {
-        titleMatch = html.match(/<h3[^>]*>حلقات\s+(.*?)<\/h3>/s);
+    function clean(text) {
+        return text
+            ? text.replace(/<[^>]+>/g, '')
+                 .replace(/\s+/g, ' ')
+                 .trim()
+            : '';
     }
 
-    if (titleMatch) {
-        details.title = titleMatch[1]
-            .replace(/<[^>]+>/g, "")
-            .trim();
+
+    const titleMatch = html.match(
+        /<h1 class="anime-details-title">([\s\S]*?)<\/h1>/
+    );
+
+    const imageMatch = html.match(
+        /<div class="anime-thumbnail">[\s\S]*?<img[^>]+src="([^"]+)"/
+    );
+
+    const descriptionMatch = html.match(
+        /<p class="anime-story">([\s\S]*?)<\/p>/
+    );
+
+
+    const genres = [];
+    const genreMatch = html.match(
+        /<ul class="anime-genres">([\s\S]*?)<\/ul>/
+    );
+
+    if (genreMatch) {
+        const genreRegex = /<li><a[^>]*>(.*?)<\/a><\/li>/g;
+        let g;
+
+        while ((g = genreRegex.exec(genreMatch[1])) !== null) {
+            genres.push(clean(g[1]));
+        }
     }
 
-    // الصورة
-    let imageMatch = html.match(/data-image="([^"]+)"/);
 
-    if (!imageMatch) {
-        imageMatch = html.match(/<img[^>]+src="([^"]+)"/);
-    }
-
-    if (imageMatch) {
-        details.image = imageMatch[1].trim();
-    }
-
-    // الوصف
-    let descMatch = html.match(/data-content="([^"]+)"/);
-
-    if (descMatch) {
-        details.description = decodeHTMLEntities(
-            descMatch[1]
-                .replace(/\\n/g, " ")
-                .trim()
+    function getInfo(label) {
+        const regex = new RegExp(
+            `<span>${label}:<\\/span>\\s*(?:<a[^>]*>)?([\\s\\S]*?)(?:<\\/a>)?<\\/div>`
         );
+
+        const match = html.match(regex);
+
+        return match ? clean(match[1]) : '';
     }
 
-    // النوع
-    let typeMatch = html.match(/anime-card-type[\s\S]*?<a[^>]*>(.*?)<\/a>/);
 
-    if (!typeMatch) {
-        typeMatch = html.match(/anime-card-type[^>]*>\s*([^<]+)/);
-    }
+    results.push({
+        title: titleMatch ? clean(titleMatch[1]) : '',
+        image: imageMatch ? imageMatch[1] : '',
+        description: descriptionMatch ? clean(descriptionMatch[1]) : '',
+        genres: genres.join(', '),
 
-    if (typeMatch) {
-        details.type = typeMatch[1]
-            .replace(/<[^>]+>/g, "")
-            .trim();
-    }
+        type: getInfo('نوع الأنمي'),
+        airdate: getInfo('بداية العرض'),
+        episodes: getInfo('عدد الحلقات'),
+        duration: getInfo('مدة الحلقة'),
+        season: getInfo('الموسم'),
+        source: getInfo('المصدر')
+    });
 
-    console.log(details);
 
-    return details;
+    console.log(`Details: ${JSON.stringify(results)}`);
+
+    return JSON.stringify(results);
 }
 
 
