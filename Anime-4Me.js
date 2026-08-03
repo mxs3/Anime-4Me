@@ -132,36 +132,69 @@ async function extractDetails(url) {
 
 
 async function extractEpisodes(url) {
-    console.log('Extracting episodes from: ' + url);
+    try {
+        const response = await soraFetch(url);
+        const html = await response.text();
 
-    const results = [];
-    const response = await soraFetch(url);
-    const html = await response.text();
+        const results = [];
 
-    // استخراج منطقة الحلقات فقط
-    const episodesSection = html.match(
-        /<div[^>]+id="episodesList"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/
-    );
+        // أفلام
+        const animeType = html.match(/<div class="anime-info">.*?نوع الأنمي:<\/span>\s*([^<]+)/s);
 
-    if (!episodesSection) {
-        console.log("No episodes section found");
-        return JSON.stringify(results);
+        if (animeType && animeType[1].includes("Movie")) {
+            return JSON.stringify([
+                {
+                    number: 1,
+                    href: url
+                }
+            ]);
+        }
+
+
+        // استخراج الحلقات
+        const episodeRegex = /<div class="ep_num">\s*<a href="([^"]+)">\s*الحلقة\s*(\d+)/g;
+
+        let match;
+
+        while ((match = episodeRegex.exec(html)) !== null) {
+            results.push({
+                number: parseInt(match[2]),
+                href: match[1]
+            });
+        }
+
+
+        // لو وجد حلقات
+        if (results.length > 0) {
+            return JSON.stringify(results.reverse());
+        }
+
+
+        // لو صفحة فيها مواسم فقط
+        const seasons = [];
+
+        const seasonRegex = /<a href="(https:\/\/4i\.a8x1c7v\.shop\/anime\/[^"]+)"/g;
+
+        while ((match = seasonRegex.exec(html)) !== null) {
+
+            if (!match[1].includes("/episode/") && match[1] !== url) {
+
+                seasons.push({
+                    number: 0,
+                    href: match[1]
+                });
+
+            }
+        }
+
+
+        return JSON.stringify(seasons);
+
+
+    } catch (e) {
+
+        console.log("extractEpisodes error:", e);
+
+        return JSON.stringify([]);
     }
-
-    const episodesHtml = episodesSection[1];
-
-    const regex = /<div class="ep_num">[\s\S]*?<a href="([^"]+)"[^>]*>[\s\S]*?الحلقة\s*(\d+)/g;
-
-    let match;
-
-    while ((match = regex.exec(episodesHtml)) !== null) {
-        results.push({
-            href: match[1],
-            number: parseInt(match[2])
-        });
-    }
-
-    console.log(`Episodes Found: ${results.length}`);
-
-    return JSON.stringify(results);
 }
