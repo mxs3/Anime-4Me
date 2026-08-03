@@ -1,31 +1,58 @@
 function searchResults(html) {
     const results = [];
-    const baseUrl = "https://4i.a8x1c7v.shop/";
 
-    const filmListRegex = /<div class="anime-card-themex">[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g;
-    const items = html.match(filmListRegex) || [];
+    const itemBlocks = html.match(
+        /<div class="anime-card-themex">[\s\S]*?<h3[\s\S]*?<\/h3>[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/g
+    );
 
-    items.forEach((itemHtml) => {
-        const titleMatch = itemHtml.match(/<h3>\s*<a[^>]*>([^<]+)<\/a>\s*<\/h3>/);
-        const hrefMatch = itemHtml.match(/<a[^>]*href="([^"]+)"[^>]*class="overlay"[^>]*>/);
-        const imgMatch = itemHtml.match(/<img[^>]*data-image="([^"]+)"[^>]*>/);
+    if (!itemBlocks) return results;
 
-        const title = titleMatch ? titleMatch[1].trim() : '';
-        let href = hrefMatch ? hrefMatch[1] : '';
-        const image = imgMatch ? imgMatch[1] : '';
 
-        if (href && !href.startsWith("https")) {
-            href = href.startsWith("/") ? baseUrl + href.slice(1) : baseUrl + href;
-        }
+    itemBlocks.forEach(block => {
 
-        if (title && href) {
+        const hrefMatch = block.match(
+            /<a href="([^"]+)"/
+        );
+
+        const titleMatch = block.match(
+            /<h3[^>]*>\s*<a[^>]*>\s*(.*?)\s*<\/a>/
+        );
+
+        const imgMatch = block.match(
+            /data-image="([^"]+)"/
+        );
+
+
+        if (hrefMatch && titleMatch && imgMatch) {
+
+            const href = hrefMatch[1].trim();
+
+            const title = decodeHTMLEntities(
+                titleMatch[1].trim()
+            );
+
+            const image = imgMatch[1].trim();
+
+
             results.push({
-                title: title,
-                image: image,
-                href: href
+                title,
+                image,
+                href
             });
         }
     });
 
+
     return results;
+}
+
+
+function decodeHTMLEntities(text) {
+    return text
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
 }
