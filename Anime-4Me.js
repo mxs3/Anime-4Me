@@ -143,42 +143,27 @@ async function extractEpisodes(url) {
             return JSON.stringify(episodes);
         }
 
-        const seasonUrlRegex = /<li\s+data-number='[^']*'>\s*<a\s+href='([^']+)'/g;
-        const seasonUrls = [...html.matchAll(seasonUrlRegex)].map(match => match[1]);
+        const episodeRegex = /href="([^"]+)"[\s\S]*?الحلقة\s*(\d+)/g;
 
-        // لو مفيش مواسم، اشتغل على نفس الصفحة مباشرة
-        if (seasonUrls.length === 0) {
-            seasonUrls.push(url);
+        for (const match of html.matchAll(episodeRegex)) {
+            episodes.push({
+                number: parseInt(match[2]),
+                href: match[1]
+            });
         }
 
-        for (const seasonUrl of seasonUrls) {
-            const seasonResponse = await fetchv2(seasonUrl);
-            const seasonHtml = typeof seasonResponse === 'object' ? await seasonResponse.text() : await seasonResponse;
-
-            const episodeRegex = /href="([^"]+)"[\s\S]*?الحلقة\s*(\d+)/g;
-
-            for (const match of seasonHtml.matchAll(episodeRegex)) {
-                episodes.push({
-                    number: parseInt(match[2]),
-                    href: match[1]
-                });
-            }
-        }
-
-        // إزالة التكرار
+        // حذف التكرار
         const uniqueEpisodes = [];
         const seen = new Set();
 
         for (const ep of episodes) {
-            const key = ep.number + "-" + ep.href;
-
-            if (!seen.has(key)) {
-                seen.add(key);
+            if (!seen.has(ep.href)) {
+                seen.add(ep.href);
                 uniqueEpisodes.push(ep);
             }
         }
 
-        // ترتيب الحلقات من 1 إلى النهاية
+        // ترتيب رقمي للحلقات
         uniqueEpisodes.sort((a, b) => a.number - b.number);
 
         return JSON.stringify(uniqueEpisodes);
