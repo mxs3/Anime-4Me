@@ -3,16 +3,16 @@
     "iconUrl": "https://raw.githubusercontent.com/mxs3/Anime-4Me/refs/heads/main/Anime-4Me.jpeg",
     "author": {
         "name": "Mxs3",
-        "icon": "https://raw.githubusercontent.com/xibrox/sora-movie-module/refs/heads/main/profile.jpg",
-        "url": "https://github.com/xibrox"
+        "icon": "https://avatars.githubusercontent.com/u/212196142?s=400&u=2456ce4be2bf64074bcf483622cfe726970025fe&v=4",
+        "url": ""
     },
-    "version": "3.0.0",
+    "version": "1.0.0",
     "language": "Arabic",
     "streamType": "MP4",
     "quality": "1080p",
     "baseUrl": "https://www.mp4upload.com/",
-    "searchBaseUrl": "https://ristoanime.com/?s=%s",
-    "scriptUrl": "https://raw.githubusercontent.com/xibrox/sora-movie-module/refs/heads/main/ristoanime/ristoanime.js",
+    "searchBaseUrl": "https://4i.a8x1c7v.shop",
+    "scriptUrl": "https://raw.githubusercontent.com/mxs3/Anime-4Me/refs/heads/main/Anime-4Me.js",
     "type": "anime",
     "streamAsyncJS": true
 }
