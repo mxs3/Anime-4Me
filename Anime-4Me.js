@@ -146,6 +146,7 @@ async function extractEpisodes(url) {
         const seasonUrlRegex = /<li\s+data-number='[^']*'>\s*<a\s+href='([^']+)'/g;
         const seasonUrls = [...html.matchAll(seasonUrlRegex)].map(match => match[1]);
 
+        // لو مفيش مواسم اشتغل على نفس الصفحة
         if (seasonUrls.length === 0) {
             seasonUrls.push(url);
         }
@@ -154,24 +155,19 @@ async function extractEpisodes(url) {
             const seasonResponse = await fetchv2(seasonUrl);
             const seasonHtml = typeof seasonResponse === 'object' ? await seasonResponse.text() : await seasonResponse;
 
-            // يجيب الرابط والرقم من نفس عنصر الحلقة
-            const episodeRegex = /<a\s+href="([^"]+)"[^>]*>[\s\S]*?(?:الحلقة|Episode)\s*(\d+)[\s\S]*?<\/a>/gi;
+            // استخراج الحلقات من قائمة الحلقات فقط
+            const episodeRegex = /<li[^>]*>\s*<a\s+href="([^"]+)"[^>]*>\s*الحلقة\s*(\d+)\s*<\/a>\s*<\/li>/g;
 
             for (const match of seasonHtml.matchAll(episodeRegex)) {
-                const number = Number(match[2]);
-
-                // منع أرقام غير منطقية
-                if (number > 0 && number < 10000) {
-                    episodes.push({
-                        number: number,
-                        href: match[1]
-                    });
-                }
+                episodes.push({
+                    number: Number(match[2]),
+                    href: match[1]
+                });
             }
         }
 
         // إزالة التكرار
-        const unique = [];
+        const uniqueEpisodes = [];
         const seen = new Set();
 
         for (const ep of episodes) {
@@ -179,14 +175,14 @@ async function extractEpisodes(url) {
 
             if (!seen.has(key)) {
                 seen.add(key);
-                unique.push(ep);
+                uniqueEpisodes.push(ep);
             }
         }
 
-        // ترتيب الحلقات
-        unique.sort((a, b) => a.number - b.number);
+        // ترتيب الحلقات من 1 للنهاية
+        uniqueEpisodes.sort((a, b) => a.number - b.number);
 
-        return JSON.stringify(unique);
+        return JSON.stringify(uniqueEpisodes);
 
     } catch (error) {
         console.error("extractEpisodes failed:", error);
