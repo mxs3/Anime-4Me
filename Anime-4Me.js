@@ -200,82 +200,40 @@ async function extractStreamUrl(url) {
                 let extracted = null;
                 const check = (
                     server.name +
-                    " " +
                     server.embed
                 ).toLowerCase();
-                // =========================
-                // UQLOAD
-                // =========================
                 if (check.includes("uqload")) {
                     extracted = await uqloadExtractor(server.embed);
                 }
-                // =========================
-                // MP4UPLOAD
-                // =========================
                 else if (check.includes("mp4upload")) {
                     extracted = await mp4uploadExtractor(server.embed);
                 }
-                // =========================
-                // VADBAM
-                // =========================
                 else if (check.includes("vadbam")) {
                     extracted = await vadbamExtractor(server.embed);
                 }
-                // =========================
-                // ANIME4UP
-                // =========================
                 else if (check.includes("anime4up")) {
                     extracted = await anime4upExtractor(server.embed);
                 }
-                // =========================
-                // SHARE4MAX
-                // =========================
                 else if (check.includes("share4max")) {
                     extracted = await share4maxExtractor(server.embed);
                 }
-                /*
-                 * لا نستخدم embed كرابط نهائي.
-                 * لازم الـ Extractor يطلع رابط فيديو فعلي.
-                 */
-                if (!extracted?.url) {
-                    console.log(
-                        "No direct stream extracted:",
-                        server.name
-                    );
-                    continue;
+                const finalUrl =
+                    extracted?.url ||
+                    server.embed;
+                const alive =
+                    await checkStream(finalUrl);
+                if (alive) {
+                    result.streams.push({
+                        title: server.name,
+                        streamUrl: finalUrl,
+                        headers:
+                            extracted?.headers ||
+                            {
+                                Referer: server.embed
+                            },
+                        subtitles: null
+                    });
                 }
-                const finalUrl = extracted.url;
-                /*
-                 * فحص الرابط النهائي فقط.
-                 * لو الرابط ميت لا يتم إضافته.
-                 */
-                const alive = await checkStream(
-                    finalUrl,
-                    extracted.headers
-                );
-                if (!alive) {
-                    console.log(
-                        "Dead stream skipped:",
-                        server.name,
-                        finalUrl
-                    );
-                    continue;
-                }
-                result.streams.push({
-                    title: server.name,
-                    streamUrl: finalUrl,
-                    headers:
-                        extracted.headers ||
-                        {
-                            Referer: server.embed
-                        },
-                    subtitles: null
-                });
-                console.log(
-                    "Stream extracted:",
-                    server.name,
-                    finalUrl
-                );
             } catch (error) {
                 console.log(
                     "Server skipped:",
@@ -299,7 +257,7 @@ async function extractStreamUrl(url) {
 // ============================================================
 // CHECK STREAM
 // ============================================================
-async function checkStream(streamUrl, headers = {}) {
+async function checkStream(streamUrl) {
     try {
         const response = await fetchv2(
             streamUrl,
@@ -307,138 +265,61 @@ async function checkStream(streamUrl, headers = {}) {
                 method: "HEAD",
                 headers: {
                     "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36",
-                    ...headers
+                        "Mozilla/5.0"
                 }
             }
         );
         if (!response)
             return false;
-        const status = response.status;
+        const status =
+            response.status;
         if (
             status >= 200 &&
             status < 400
         ) {
             return true;
         }
-        /*
-         * بعض سيرفرات HLS لا تتعامل جيدًا
-         * مع HEAD.
-         */
-        if (
-            streamUrl.includes(".m3u8") ||
-            streamUrl.includes(".m3u")
-        ) {
-            try {
-                const testResponse = await fetchv2(
-                    streamUrl,
-                    {
-                        headers: {
-                            "User-Agent":
-                                "Mozilla/5.0",
-                            ...headers
-                        }
-                    }
-                );
-                if (
-                    testResponse &&
-                    testResponse.status >= 200 &&
-                    testResponse.status < 400
-                ) {
-                    return true;
-                }
-            } catch (e) {}
-        }
         return false;
     } catch (e) {
-        /*
-         * بعض الـ hosts تمنع HEAD.
-         * نجرب GET فقط في هذه الحالة.
-         */
-        try {
-            const response = await fetchv2(
-                streamUrl,
-                {
-                    headers: {
-                        "User-Agent":
-                            "Mozilla/5.0",
-                        ...headers
-                    }
-                }
-            );
-            return !!(
-                response &&
-                response.status >= 200 &&
-                response.status < 400
-            );
-        } catch (error) {
-            return false;
-        }
+        return false;
     }
 }
 // ============================================================
-// GENERIC VIDEO URL EXTRACTOR
-// ============================================================
-function extractVideoUrl(html) {
-    if (!html)
-        return null;
-    const patterns = [
-        // file: "..."
-        /file\s*:\s*["']([^"']+)["']/i,
-        // src: "..."
-        /src\s*:\s*["']([^"']+)["']/i,
-        // source: "..."
-        /source\s*:\s*["']([^"']+)["']/i,
-        // file = "..."
-        /file\s*=\s*["']([^"']+)["']/i,
-        // sources: [{file:"..."}]
-        /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i,
-        // sources: ["..."]
-        /sources\s*:\s*\[\s*["']([^"']+)["']/i,
-        // player.src({src:"..."})
-        /player\.src\s*\(\s*\{\s*src\s*:\s*["']([^"']+)["']/i,
-        // video source
-        /<source[^>]+src=["']([^"']+)["']/i
-    ];
-    for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (!match || !match[1])
-            continue;
-        const value = decodeHTMLEntities(
-            match[1]
-        ).trim();
-        if (
-            value.includes(".mp4") ||
-            value.includes(".m3u8") ||
-            value.includes(".m3u") ||
-            value.startsWith("http")
-        ) {
-            return value;
-        }
-    }
-    return null;
-}
-// ============================================================
-// UQLOAD EXTRACTOR
+// UQLOAD
+// MP4 + HLS
 // ============================================================
 async function uqloadExtractor(url) {
     const headers = {
-        Referer: url,
-        Origin: "https://uqload.is",
-        "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+        Referer: url
     };
     try {
         const res =
             await fetchv2(url, headers);
         const html =
             await res.text();
-        const videoUrl =
-            extractVideoUrl(html);
-        if (!videoUrl)
-            return null;
+        const match =
+            html.match(
+                /sources\s*:\s*\[\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /source\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /src\s*:\s*["']([^"']+)["']/i
+            );
         return {
-            url: videoUrl,
+            url:
+                match ? decodeHTMLEntities(match[1]) : null,
             headers
         };
     } catch (error) {
@@ -450,48 +331,73 @@ async function uqloadExtractor(url) {
     }
 }
 // ============================================================
-// MP4UPLOAD EXTRACTOR
+// MP4UPLOAD
+// MP4 + HLS
 // ============================================================
 async function mp4uploadExtractor(url) {
     const headers = {
-        Referer: "https://mp4upload.com",
-        "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+        Referer: "https://mp4upload.com"
     };
     try {
         const res =
             await fetchv2(url, headers);
         const html =
             await res.text();
+        let match =
+            html.match(
+                /player\.src\s*\(\s*\{\s*src\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /player\.src\s*\(\s*\[\s*\{\s*src\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /source\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /src\s*:\s*["']([^"']+)["']/i
+            );
         /*
-         * نحاول كل الصيغ الممكنة:
-         *
-         * MP4
-         * M3U8
-         * player.src
-         * file
-         * source
+         * لو لم نجد الرابط في HTML الرئيسي
+         * نبحث داخل جميع script tags.
          */
-        let videoUrl =
-            extractVideoUrl(html);
-        /*
-         * بعض صفحات MP4Upload تضع الرابط
-         * داخل JavaScript بشكل مختلف.
-         */
-        if (!videoUrl) {
+        if (!match) {
             const scripts =
                 extractScriptTags(html);
             for (const script of scripts) {
-                videoUrl =
-                    extractVideoUrl(script);
-                if (videoUrl)
+                match =
+                    script.match(
+                        /player\.src\s*\(\s*\{\s*src\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /player\.src\s*\(\s*\[\s*\{\s*src\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /source\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /src\s*:\s*["']([^"']+)["']/i
+                    );
+                if (match)
                     break;
             }
         }
-        if (!videoUrl)
-            return null;
         return {
-            url: videoUrl,
+            url:
+                match ? decodeHTMLEntities(match[1]) : null,
             headers
         };
     } catch (error) {
@@ -503,38 +409,69 @@ async function mp4uploadExtractor(url) {
     }
 }
 // ============================================================
-// VADBAM EXTRACTOR
+// VADBAM
+// MP4 + HLS
 // ============================================================
 async function vadbamExtractor(url) {
     const headers = {
-        Referer: url,
-        "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+        Referer: url
     };
     try {
         const res =
             await fetchv2(url, headers);
         const html =
             await res.text();
-        let videoUrl =
-            extractVideoUrl(html);
-        /*
-         * البحث داخل جميع الـ scripts
-         */
-        if (!videoUrl) {
+        let match =
+            html.match(
+                /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /sources\s*:\s*\[\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /source\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /src\s*:\s*["']([^"']+)["']/i
+            );
+        if (!match) {
             const scripts =
                 extractScriptTags(html);
             for (const script of scripts) {
-                videoUrl =
-                    extractVideoUrl(script);
-                if (videoUrl)
+                match =
+                    script.match(
+                        /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /sources\s*:\s*\[\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /source\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /src\s*:\s*["']([^"']+)["']/i
+                    );
+                if (match)
                     break;
             }
         }
-        if (!videoUrl)
-            return null;
         return {
-            url: videoUrl,
+            url:
+                match ? decodeHTMLEntities(match[1]) : null,
             headers
         };
     } catch (error) {
@@ -546,39 +483,61 @@ async function vadbamExtractor(url) {
     }
 }
 // ============================================================
-// ANIME4UP EXTRACTOR
+// ANIME4UP
+// MP4 + HLS
 // ============================================================
 async function anime4upExtractor(url) {
     const headers = {
-        Referer: url,
-        "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+        Referer: url
     };
     try {
         const res =
             await fetchv2(url, headers);
         const html =
             await res.text();
-        let videoUrl =
-            extractVideoUrl(html);
-        /*
-         * Anime4up قد يستخدم iframe
-         * أو JavaScript يحتوي على الرابط.
-         */
-        if (!videoUrl) {
+        let match =
+            html.match(
+                /file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /source\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /src\s*:\s*["']([^"']+)["']/i
+            );
+        if (!match) {
             const scripts =
                 extractScriptTags(html);
             for (const script of scripts) {
-                videoUrl =
-                    extractVideoUrl(script);
-                if (videoUrl)
+                match =
+                    script.match(
+                        /file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /source\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /src\s*:\s*["']([^"']+)["']/i
+                    );
+                if (match)
                     break;
             }
         }
-        if (!videoUrl)
-            return null;
         return {
-            url: videoUrl,
+            url:
+                match ? decodeHTMLEntities(match[1]) : null,
             headers
         };
     } catch (error) {
@@ -590,38 +549,69 @@ async function anime4upExtractor(url) {
     }
 }
 // ============================================================
-// SHARE4MAX EXTRACTOR
+// SHARE4MAX
+// MP4 + HLS
 // ============================================================
 async function share4maxExtractor(url) {
     const headers = {
-        Referer: url,
-        "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0.0.0 Safari/537.36"
+        Referer: url
     };
     try {
         const res =
             await fetchv2(url, headers);
         const html =
             await res.text();
-        let videoUrl =
-            extractVideoUrl(html);
-        /*
-         * البحث داخل scripts
-         */
-        if (!videoUrl) {
+        let match =
+            html.match(
+                /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /sources\s*:\s*\[\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /file\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /source\s*:\s*["']([^"']+)["']/i
+            )
+            ||
+            html.match(
+                /src\s*:\s*["']([^"']+)["']/i
+            );
+        if (!match) {
             const scripts =
                 extractScriptTags(html);
             for (const script of scripts) {
-                videoUrl =
-                    extractVideoUrl(script);
-                if (videoUrl)
+                match =
+                    script.match(
+                        /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /sources\s*:\s*\[\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /file\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /source\s*:\s*["']([^"']+)["']/i
+                    )
+                    ||
+                    script.match(
+                        /src\s*:\s*["']([^"']+)["']/i
+                    );
+                if (match)
                     break;
             }
         }
-        if (!videoUrl)
-            return null;
         return {
-            url: videoUrl,
+            url:
+                match ? decodeHTMLEntities(match[1]) : null,
             headers
         };
     } catch (error) {
@@ -653,20 +643,20 @@ function extractScriptTags(html) {
 function decodeHTMLEntities(text) {
     if (!text)
         return text;
-    text =
-        text.replace(
-            /&#(\d+);/g,
-            (match, dec) =>
-                String.fromCharCode(dec)
-        );
-    text =
-        text.replace(
-            /&#x([0-9a-f]+);/gi,
-            (match, hex) =>
-                String.fromCharCode(
-                    parseInt(hex, 16)
-                )
-        );
+    text = text.replace(
+        /&#(\d+);/g,
+        function(match, dec) {
+            return String.fromCharCode(dec);
+        }
+    );
+    text = text.replace(
+        /&#x([0-9a-f]+);/gi,
+        function(match, hex) {
+            return String.fromCharCode(
+                parseInt(hex, 16)
+            );
+        }
+    );
     const entities = {
         "&quot;": '"',
         "&amp;": "&",
@@ -677,11 +667,10 @@ function decodeHTMLEntities(text) {
         "&nbsp;": " "
     };
     for (const entity in entities) {
-        text =
-            text.replace(
-                new RegExp(entity, "g"),
-                entities[entity]
-            );
+        text = text.replace(
+            new RegExp(entity, "g"),
+            entities[entity]
+        );
     }
     return text;
 }
