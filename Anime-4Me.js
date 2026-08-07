@@ -245,3 +245,356 @@ async function extractEpisodes(url) {
 
     }
 }
+
+async function extractStreamUrl(url) {
+
+    const result = {
+        streams: [],
+        subtitles: null
+    };
+
+    try {
+
+        const response = await fetchv2(url);
+        const html = typeof response === "object"
+            ? await response.text()
+            : await response;
+
+
+        const servers = [];
+
+        const regex = /<li[^>]+data-watch=["']([^"']+)["'][^>]*>[\s\S]*?<a>[\s\S]*?([^<]+?)\s*<span[^>]*class=["']quality["']/gi;
+
+
+        for (const match of html.matchAll(regex)) {
+
+            let embed = match[1].trim();
+            let name = match[2].trim();
+
+            servers.push({
+                name,
+                embed
+            });
+        }
+
+
+        const unique = [];
+        const check = new Set();
+
+
+        for (const server of servers) {
+
+            if (!check.has(server.embed)) {
+
+                check.add(server.embed);
+                unique.push(server);
+
+            }
+
+        }
+
+
+
+        for (const server of unique) {
+
+            try {
+
+                let extracted = null;
+
+
+                const lower = server.name.toLowerCase() + server.embed.toLowerCase();
+
+
+
+                if (lower.includes("uqload")) {
+
+                    extracted = await uqloadExtractor(server.embed);
+
+                }
+
+                else if (
+                    lower.includes("mp4upload") ||
+                    lower.includes("mp4")
+                ) {
+
+                    extracted = await mp4uploadExtractor(server.embed);
+
+                }
+
+                else if (
+                    lower.includes("vadbam")
+                ) {
+
+                    extracted = await vadbamExtractor(server.embed);
+
+                }
+
+                else if (
+                    lower.includes("anime4up")
+                ) {
+
+                    extracted = await anime4upExtractor(server.embed);
+
+                }
+
+                else if (
+                    lower.includes("share4max")
+                ) {
+
+                    extracted = await share4maxExtractor(server.embed);
+
+                }
+
+
+
+                result.streams.push({
+
+                    title: server.name,
+
+                    streamUrl:
+                        extracted?.url ||
+                        server.embed,
+
+                    headers:
+                        extracted?.headers ||
+                        {
+                            Referer: server.embed
+                        },
+
+                    subtitles:null
+
+                });
+
+
+
+            } catch(e) {
+
+
+                result.streams.push({
+
+                    title: server.name,
+
+                    streamUrl: server.embed,
+
+                    headers:{
+                        Referer: server.embed
+                    },
+
+                    subtitles:null
+
+                });
+
+
+            }
+
+
+        }
+
+
+
+        return JSON.stringify(result);
+
+
+
+    } catch(error){
+
+
+        console.log("Stream Error:",error);
+
+
+        return JSON.stringify({
+            streams:[],
+            subtitles:null
+        });
+
+
+    }
+
+}
+
+
+
+
+// =====================
+// UQLOAD
+// =====================
+
+async function uqloadExtractor(url){
+
+    const headers={
+        Referer:url
+    };
+
+
+    const res=await fetchv2(url,headers);
+
+    const html=await res.text();
+
+
+    let match =
+    html.match(/sources:\s*\[\s*"([^"]+\.mp4)/i)
+    ||
+    html.match(/file:\s*"([^"]+\.mp4)/i);
+
+
+    return {
+
+        url:match ? match[1] : null,
+
+        headers
+
+    };
+
+}
+
+
+
+// =====================
+// MP4UPLOAD
+// =====================
+
+async function mp4uploadExtractor(url){
+
+
+    const headers={
+        Referer:"https://mp4upload.com"
+    };
+
+
+    const res=await fetchv2(url,headers);
+
+    const html=await res.text();
+
+
+
+    let match =
+    html.match(/player\.src\(\{\s*src:\s*"([^"]+)/)
+    ||
+    html.match(/file:\s*"([^"]+\.mp4)/);
+
+
+
+    return {
+
+        url:match ? match[1] : null,
+
+        headers
+
+    };
+
+
+}
+
+
+
+// =====================
+// VADBAM
+// =====================
+
+async function vadbamExtractor(url){
+
+    const headers={
+        Referer:url
+    };
+
+
+    const res=await fetchv2(url,headers);
+
+    const html=await res.text();
+
+
+
+    let match =
+    html.match(/file:\s*"([^"]+\.mp4)/)
+    ||
+    html.match(/sources:\s*\[\s*\{\s*file:"([^"]+)/);
+
+
+
+    return {
+
+        url:match ? match[1]:null,
+
+        headers
+
+    };
+
+
+}
+
+
+
+// =====================
+// ANIME4UP
+// =====================
+
+async function anime4upExtractor(url){
+
+
+    const headers={
+        Referer:url
+    };
+
+
+    const res=await fetchv2(url,headers);
+
+    const html=await res.text();
+
+
+
+    let match =
+    html.match(/file:\s*"([^"]+\.m3u8)/)
+    ||
+    html.match(/source:\s*"([^"]+)/);
+
+
+
+    return {
+
+        url:match ? match[1]:null,
+
+        headers
+
+    };
+
+
+}
+
+
+
+
+// =====================
+// SHARE4MAX
+// =====================
+
+async function share4maxExtractor(url){
+
+
+    const headers={
+        Referer:url
+    };
+
+
+    const res=await fetchv2(url,headers);
+
+    const html=await res.text();
+
+
+
+    let match =
+    html.match(/file:\s*"([^"]+\.m3u8)/)
+    ||
+    html.match(/sources:\s*\[\{file:"([^"]+)/);
+
+
+
+    return {
+
+        url:match ? match[1]:null,
+
+        headers
+
+    };
+
+
+}
