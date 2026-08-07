@@ -268,26 +268,24 @@ async function extractStreamUrl(url) {
 
         for (const match of html.matchAll(regex)) {
 
-            let embed = match[1].trim();
-            let name = match[2].trim();
-
             servers.push({
-                name,
-                embed
+                name: match[2].trim(),
+                embed: match[1].trim()
             });
+
         }
 
 
-        const unique = [];
-        const check = new Set();
+        const uniqueServers = [];
+        const seen = new Set();
 
 
         for (const server of servers) {
 
-            if (!check.has(server.embed)) {
+            if (!seen.has(server.embed)) {
 
-                check.add(server.embed);
-                unique.push(server);
+                seen.add(server.embed);
+                uniqueServers.push(server);
 
             }
 
@@ -295,51 +293,44 @@ async function extractStreamUrl(url) {
 
 
 
-        for (const server of unique) {
+        for (const server of uniqueServers) {
 
             try {
 
                 let extracted = null;
 
+                const check = (
+                    server.name +
+                    server.embed
+                ).toLowerCase();
 
-                const lower = server.name.toLowerCase() + server.embed.toLowerCase();
 
 
-
-                if (lower.includes("uqload")) {
+                if (check.includes("uqload")) {
 
                     extracted = await uqloadExtractor(server.embed);
 
                 }
 
-                else if (
-                    lower.includes("mp4upload") ||
-                    lower.includes("mp4")
-                ) {
+                else if (check.includes("mp4upload")) {
 
                     extracted = await mp4uploadExtractor(server.embed);
 
                 }
 
-                else if (
-                    lower.includes("vadbam")
-                ) {
+                else if (check.includes("vadbam")) {
 
                     extracted = await vadbamExtractor(server.embed);
 
                 }
 
-                else if (
-                    lower.includes("anime4up")
-                ) {
+                else if (check.includes("anime4up")) {
 
                     extracted = await anime4upExtractor(server.embed);
 
                 }
 
-                else if (
-                    lower.includes("share4max")
-                ) {
+                else if (check.includes("share4max")) {
 
                     extracted = await share4maxExtractor(server.embed);
 
@@ -347,43 +338,47 @@ async function extractStreamUrl(url) {
 
 
 
-                result.streams.push({
-
-                    title: server.name,
-
-                    streamUrl:
-                        extracted?.url ||
-                        server.embed,
-
-                    headers:
-                        extracted?.headers ||
-                        {
-                            Referer: server.embed
-                        },
-
-                    subtitles:null
-
-                });
+                const finalUrl =
+                    extracted?.url ||
+                    server.embed;
 
 
 
-            } catch(e) {
+                const alive =
+                    await checkStream(finalUrl);
 
 
-                result.streams.push({
 
-                    title: server.name,
+                if (alive) {
 
-                    streamUrl: server.embed,
 
-                    headers:{
-                        Referer: server.embed
-                    },
+                    result.streams.push({
 
-                    subtitles:null
+                        title: server.name,
 
-                });
+                        streamUrl: finalUrl,
 
+                        headers:
+                            extracted?.headers ||
+                            {
+                                Referer: server.embed
+                            },
+
+                        subtitles:null
+
+                    });
+
+
+                }
+
+
+            } catch(error) {
+
+                console.log(
+                    "Server skipped:",
+                    server.name,
+                    error
+                );
 
             }
 
@@ -396,16 +391,74 @@ async function extractStreamUrl(url) {
 
 
 
-    } catch(error){
+    } catch(error) {
 
-
-        console.log("Stream Error:",error);
+        console.log(
+            "extractStreamUrl error:",
+            error
+        );
 
 
         return JSON.stringify({
             streams:[],
             subtitles:null
         });
+
+    }
+
+}
+
+
+
+
+
+// فحص الرابط قبل إضافته
+async function checkStream(streamUrl) {
+
+    try {
+
+
+        const response = await fetchv2(
+            streamUrl,
+            {
+                method:"HEAD",
+                headers:{
+                    "User-Agent":
+                    "Mozilla/5.0"
+                }
+            }
+        );
+
+
+        if (!response)
+            return false;
+
+
+
+        const status =
+            response.status;
+
+
+
+        if (
+            status >= 200 &&
+            status < 400
+        ) {
+
+            return true;
+
+        }
+
+
+
+        return false;
+
+
+
+    } catch(e) {
+
+
+        return false;
 
 
     }
@@ -415,9 +468,6 @@ async function extractStreamUrl(url) {
 
 
 
-// =====================
-// UQLOAD
-// =====================
 
 async function uqloadExtractor(url){
 
@@ -426,20 +476,24 @@ async function uqloadExtractor(url){
     };
 
 
-    const res=await fetchv2(url,headers);
+    const res =
+        await fetchv2(url,headers);
 
-    const html=await res.text();
+    const html =
+        await res.text();
 
 
-    let match =
-    html.match(/sources:\s*\[\s*"([^"]+\.mp4)/i)
-    ||
-    html.match(/file:\s*"([^"]+\.mp4)/i);
+    const match =
+        html.match(/sources:\s*\[\s*"([^"]+\.mp4)/i)
+        ||
+        html.match(/file:\s*"([^"]+\.mp4)/i);
+
 
 
     return {
 
-        url:match ? match[1] : null,
+        url:
+        match ? match[1] : null,
 
         headers
 
@@ -449,47 +503,44 @@ async function uqloadExtractor(url){
 
 
 
-// =====================
-// MP4UPLOAD
-// =====================
+
 
 async function mp4uploadExtractor(url){
-
 
     const headers={
         Referer:"https://mp4upload.com"
     };
 
 
-    const res=await fetchv2(url,headers);
-
-    const html=await res.text();
-
+    const res =
+        await fetchv2(url,headers);
 
 
-    let match =
-    html.match(/player\.src\(\{\s*src:\s*"([^"]+)/)
-    ||
-    html.match(/file:\s*"([^"]+\.mp4)/);
+    const html =
+        await res.text();
+
+
+    const match =
+        html.match(/player\.src\(\{\s*src:\s*"([^"]+)/i)
+        ||
+        html.match(/file:\s*"([^"]+\.mp4)/i);
 
 
 
     return {
 
-        url:match ? match[1] : null,
+        url:
+        match ? match[1] : null,
 
         headers
 
     };
 
-
 }
 
 
 
-// =====================
-// VADBAM
-// =====================
+
 
 async function vadbamExtractor(url){
 
@@ -498,103 +549,105 @@ async function vadbamExtractor(url){
     };
 
 
-    const res=await fetchv2(url,headers);
-
-    const html=await res.text();
-
+    const res =
+        await fetchv2(url,headers);
 
 
-    let match =
-    html.match(/file:\s*"([^"]+\.mp4)/)
-    ||
-    html.match(/sources:\s*\[\s*\{\s*file:"([^"]+)/);
+    const html =
+        await res.text();
+
+
+
+    const match =
+        html.match(/file:\s*"([^"]+\.mp4)/i)
+        ||
+        html.match(/sources:\s*\[\{file:"([^"]+)/i);
 
 
 
     return {
 
-        url:match ? match[1]:null,
+        url:
+        match ? match[1] : null,
 
         headers
 
     };
 
-
 }
 
 
 
-// =====================
-// ANIME4UP
-// =====================
+
 
 async function anime4upExtractor(url){
 
-
     const headers={
         Referer:url
     };
 
 
-    const res=await fetchv2(url,headers);
-
-    const html=await res.text();
-
+    const res =
+        await fetchv2(url,headers);
 
 
-    let match =
-    html.match(/file:\s*"([^"]+\.m3u8)/)
-    ||
-    html.match(/source:\s*"([^"]+)/);
+    const html =
+        await res.text();
+
+
+
+    const match =
+        html.match(/file:\s*"([^"]+\.m3u8)/i)
+        ||
+        html.match(/source:\s*"([^"]+)/i);
 
 
 
     return {
 
-        url:match ? match[1]:null,
+        url:
+        match ? match[1] : null,
 
         headers
 
     };
-
 
 }
 
 
 
 
-// =====================
-// SHARE4MAX
-// =====================
 
 async function share4maxExtractor(url){
-
 
     const headers={
         Referer:url
     };
 
 
-    const res=await fetchv2(url,headers);
-
-    const html=await res.text();
-
+    const res =
+        await fetchv2(url,headers);
 
 
-    let match =
-    html.match(/file:\s*"([^"]+\.m3u8)/)
-    ||
-    html.match(/sources:\s*\[\{file:"([^"]+)/);
+    const html =
+        await res.text();
+
+
+
+    const match =
+        html.match(/file:\s*"([^"]+\.m3u8)/i)
+        ||
+        html.match(/sources:\s*\[\{file:"([^"]+)/i);
 
 
 
     return {
 
-        url:match ? match[1]:null,
+        url:
+        match ? match[1] : null,
 
         headers
 
     };
-
 
 }
