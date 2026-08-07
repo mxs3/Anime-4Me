@@ -133,59 +133,115 @@ async function extractDetails(url) {
 
 async function extractEpisodes(url) {
     try {
-        const pageResponse = await fetchv2(url);
-        const html = typeof pageResponse === 'object' ? await pageResponse.text() : await pageResponse;
-
         const episodes = [];
 
         if (url.includes('movies')) {
-            episodes.push({ number: 1, href: url });
+            episodes.push({
+                number: 1,
+                href: url
+            });
             return JSON.stringify(episodes);
         }
 
-        const seasonUrlRegex = /<li\s+data-number='[^']*'>\s*<a\s+href='([^']+)'/g;
-        const seasonUrls = [...html.matchAll(seasonUrlRegex)].map(match => match[1]);
-
-        // لو مفيش مواسم اشتغل على نفس الصفحة
-        if (seasonUrls.length === 0) {
-            seasonUrls.push(url);
+        async function getHtml(pageUrl) {
+            const response = await fetchv2(pageUrl);
+            return typeof response === 'object'
+                ? await response.text()
+                : await response;
         }
 
-        for (const seasonUrl of seasonUrls) {
-            const seasonResponse = await fetchv2(seasonUrl);
-            const seasonHtml = typeof seasonResponse === 'object' ? await seasonResponse.text() : await seasonResponse;
+        const firstHtml = await getHtml(url);
 
-            // استخراج الحلقات من قائمة الحلقات فقط
-            const episodeRegex = /<li[^>]*>\s*<a\s+href="([^"]+)"[^>]*>\s*الحلقة\s*(\d+)\s*<\/a>\s*<\/li>/g;
+        let pages = 1;
 
-            for (const match of seasonHtml.matchAll(episodeRegex)) {
-                episodes.push({
-                    number: Number(match[2]),
-                    href: match[1]
-                });
+        // استخراج عدد صفحات الحلقات
+        const maxPagesMatch = firstHtml.match(/data-max-pages=["'](\d+)["']/);
+
+        if (maxPagesMatch) {
+            pages = Number(maxPagesMatch[1]);
+        } else {
+            const pageLinks = [...firstHtml.matchAll(/\/page\/(\d+)\//g)]
+                .map(m => Number(m[1]));
+
+            if (pageLinks.length) {
+                pages = Math.max(...pageLinks);
             }
         }
 
-        // إزالة التكرار
-        const uniqueEpisodes = [];
+        // دالة استخراج الحلقات من الصفحة
+        function extractFromHtml(html) {
+
+            const regex = /<div class="ep_num">[\s\S]*?<a href="([^"]+)"[^>]*>\s*([^<]+?)\s*<\/a>/g;
+
+            for (const match of html.matchAll(regex)) {
+
+                const href = match[1];
+                const title = match[2].trim();
+
+                // استخراج رقم الحلقة حتى لو كانت خاصة
+                const numberMatch = title.match(/(\d+)/);
+
+                if (numberMatch) {
+
+                    episodes.push({
+                        number: Number(numberMatch[1]),
+                        title: title,
+                        href: href
+                    });
+
+                }
+            }
+        }
+
+        // الصفحة الأولى
+        extractFromHtml(firstHtml);
+
+
+        // باقي الصفحات
+        for (let i = 2; i <= pages; i++) {
+
+            const pageUrl = url.replace(/\/$/, '') + `/page/${i}/`;
+
+            const html = await getHtml(pageUrl);
+
+            extractFromHtml(html);
+        }
+
+
+        // حذف التكرار
+        const unique = [];
         const seen = new Set();
 
         for (const ep of episodes) {
-            const key = ep.number + "-" + ep.href;
 
-            if (!seen.has(key)) {
-                seen.add(key);
-                uniqueEpisodes.push(ep);
+            if (!seen.has(ep.href)) {
+                seen.add(ep.href);
+                unique.push(ep);
             }
+
         }
 
-        // ترتيب الحلقات من 1 للنهاية
-        uniqueEpisodes.sort((a, b) => a.number - b.number);
 
-        return JSON.stringify(uniqueEpisodes);
+        // ترتيب الحلقات
+        unique.sort((a, b) => {
+
+            if (a.number !== b.number) {
+                return a.number - b.number;
+            }
+
+            return a.href.localeCompare(b.href);
+
+        });
+
+
+        return JSON.stringify(unique);
+
 
     } catch (error) {
+
         console.error("extractEpisodes failed:", error);
+
         return JSON.stringify([]);
+
     }
 }
