@@ -256,6 +256,7 @@ async function extractStreamUrl(url) {
     try {
 
         const response = await fetchv2(url);
+
         const html = typeof response === "object"
             ? await response.text()
             : await response;
@@ -263,19 +264,42 @@ async function extractStreamUrl(url) {
 
         const servers = [];
 
-        const regex = /<li[^>]+data-watch=["']([^"']+)["'][^>]*>[\s\S]*?<a>[\s\S]*?([^<]+?)\s*<span[^>]*class=["']quality["']/gi;
+        /*
+         * استخراج السيرفرات من data-watch
+         */
+        const regex =
+            /<li[^>]+data-watch=["']([^"']+)["'][^>]*>[\s\S]*?<a[^>]*>\s*([^<]+?)\s*<span[^>]*class=["']quality["']/gi;
 
 
         for (const match of html.matchAll(regex)) {
 
+            const embed = match[1]?.trim();
+            const name = match[2]?.trim();
+
+            if (!embed || !name)
+                continue;
+
+            /*
+             * Mega يتم تجاهله نهائياً
+             */
+            if (
+                name.toLowerCase().includes("mega") ||
+                embed.toLowerCase().includes("mega.nz")
+            ) {
+                continue;
+            }
+
             servers.push({
-                name: match[2].trim(),
-                embed: match[1].trim()
+                name: name,
+                embed: embed
             });
 
         }
 
 
+        /*
+         * إزالة السيرفرات المكررة
+         */
         const uniqueServers = [];
         const seen = new Set();
 
@@ -292,7 +316,9 @@ async function extractStreamUrl(url) {
         }
 
 
-
+        /*
+         * استخراج كل سيرفر
+         */
         for (const server of uniqueServers) {
 
             try {
@@ -301,78 +327,168 @@ async function extractStreamUrl(url) {
 
                 const check = (
                     server.name +
+                    " " +
                     server.embed
                 ).toLowerCase();
 
 
-
+                /*
+                 * UQLOAD
+                 */
                 if (check.includes("uqload")) {
 
-                    extracted = await uqloadExtractor(server.embed);
+                    extracted =
+                        await uqloadExtractor(
+                            server.embed
+                        );
 
                 }
 
+
+                /*
+                 * MP4UPLOAD
+                 */
                 else if (check.includes("mp4upload")) {
 
-                    extracted = await mp4uploadExtractor(server.embed);
+                    extracted =
+                        await mp4uploadExtractor(
+                            server.embed
+                        );
 
                 }
 
+
+                /*
+                 * VADBAM
+                 */
                 else if (check.includes("vadbam")) {
 
-                    extracted = await vadbamExtractor(server.embed);
+                    extracted =
+                        await vadbamExtractor(
+                            server.embed
+                        );
 
                 }
 
+
+                /*
+                 * ANIME4UP
+                 */
                 else if (check.includes("anime4up")) {
 
-                    extracted = await anime4upExtractor(server.embed);
+                    extracted =
+                        await anime4upExtractor(
+                            server.embed
+                        );
 
                 }
 
+
+                /*
+                 * SHARE4MAX
+                 */
                 else if (check.includes("share4max")) {
 
-                    extracted = await share4maxExtractor(server.embed);
+                    extracted =
+                        await share4maxExtractor(
+                            server.embed
+                        );
 
                 }
 
 
+                /*
+                 * لو السيرفر غير معروف
+                 * نحاول قراءة الصفحة مباشرة
+                 */
+                else {
 
+                    extracted =
+                        await genericStreamExtractor(
+                            server.embed
+                        );
+
+                }
+
+
+                /*
+                 * الرابط المستخرج
+                 */
                 const finalUrl =
                     extracted?.url ||
-                    server.embed;
+                    null;
 
 
+                /*
+                 * لا نضيف السيرفر إذا لم نجد
+                 * رابط فيديو فعلي
+                 */
+                if (!finalUrl) {
 
-                const alive =
-                    await checkStream(finalUrl);
+                    console.log(
+                        "No stream extracted:",
+                        server.name
+                    );
 
-
-
-                if (alive) {
-
-
-                    result.streams.push({
-
-                        title: server.name,
-
-                        streamUrl: finalUrl,
-
-                        headers:
-                            extracted?.headers ||
-                            {
-                                Referer: server.embed
-                            },
-
-                        subtitles:null
-
-                    });
-
+                    continue;
 
                 }
 
 
-            } catch(error) {
+                /*
+                 * فحص الرابط
+                 */
+                const alive =
+                    await checkStream(
+                        finalUrl,
+                        extracted?.headers ||
+                        {
+                            Referer: server.embed
+                        }
+                    );
+
+
+                /*
+                 * فقط الروابط التي تعمل
+                 */
+                if (!alive) {
+
+                    console.log(
+                        "Dead stream skipped:",
+                        server.name,
+                        finalUrl
+                    );
+
+                    continue;
+
+                }
+
+
+                result.streams.push({
+
+                    title: server.name,
+
+                    streamUrl: finalUrl,
+
+                    headers:
+                        extracted?.headers ||
+                        {
+                            Referer: server.embed
+                        },
+
+                    subtitles: null
+
+                });
+
+
+                console.log(
+                    "Stream added:",
+                    server.name,
+                    finalUrl
+                );
+
+
+            } catch (error) {
 
                 console.log(
                     "Server skipped:",
@@ -382,16 +498,13 @@ async function extractStreamUrl(url) {
 
             }
 
-
         }
-
 
 
         return JSON.stringify(result);
 
 
-
-    } catch(error) {
+    } catch (error) {
 
         console.log(
             "extractStreamUrl error:",
@@ -400,8 +513,8 @@ async function extractStreamUrl(url) {
 
 
         return JSON.stringify({
-            streams:[],
-            subtitles:null
+            streams: [],
+            subtitles: null
         });
 
     }
@@ -412,37 +525,55 @@ async function extractStreamUrl(url) {
 
 
 
-// فحص الرابط قبل إضافته
-async function checkStream(streamUrl) {
+/*
+ * =========================================================
+ * CHECK STREAM
+ * =========================================================
+ */
+
+async function checkStream(streamUrl, headers = {}) {
 
     try {
 
-
-        const response = await fetchv2(
-            streamUrl,
-            {
-                method:"HEAD",
-                headers:{
-                    "User-Agent":
-                    "Mozilla/5.0"
-                }
-            }
-        );
-
-
-        if (!response)
+        if (!streamUrl)
             return false;
 
 
+        /*
+         * بعض السيرفرات لا تقبل HEAD
+         * لذلك نستخدم GET بشكل خفيف
+         */
+        let response;
 
-        const status =
-            response.status;
+        try {
+
+            response =
+                await fetchv2(
+                    streamUrl,
+                    {
+                        method: "HEAD",
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0",
+                            ...headers
+                        }
+                    }
+                );
+
+        } catch (e) {
+
+            response = null;
+
+        }
 
 
-
+        /*
+         * إذا نجح HEAD
+         */
         if (
-            status >= 200 &&
-            status < 400
+            response &&
+            response.status >= 200 &&
+            response.status < 400
         ) {
 
             return true;
@@ -450,16 +581,46 @@ async function checkStream(streamUrl) {
         }
 
 
+        /*
+         * محاولة ثانية بـ GET
+         */
+        try {
+
+            response =
+                await fetchv2(
+                    streamUrl,
+                    {
+                        method: "GET",
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0",
+                            "Range": "bytes=0-1024",
+                            ...headers
+                        }
+                    }
+                );
+
+
+            if (
+                response &&
+                response.status >= 200 &&
+                response.status < 400
+            ) {
+
+                return true;
+
+            }
+
+        } catch (e) {}
+
+
 
         return false;
 
 
-
-    } catch(e) {
-
+    } catch (e) {
 
         return false;
-
 
     }
 
@@ -469,35 +630,104 @@ async function checkStream(streamUrl) {
 
 
 
-async function uqloadExtractor(url){
+/*
+ * =========================================================
+ * UQLOAD EXTRACTOR
+ * =========================================================
+ */
 
-    const headers={
-        Referer:url
-    };
+async function uqloadExtractor(url) {
 
+    const headers = {
 
-    const res =
-        await fetchv2(url,headers);
+        "Referer": url,
 
-    const html =
-        await res.text();
+        "Origin": "https://uqload.is",
 
-
-    const match =
-        html.match(/sources:\s*\[\s*"([^"]+\.mp4)/i)
-        ||
-        html.match(/file:\s*"([^"]+\.mp4)/i);
-
-
-
-    return {
-
-        url:
-        match ? match[1] : null,
-
-        headers
+        "User-Agent":
+            "Mozilla/5.0"
 
     };
+
+
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
+
+
+        const html =
+            await res.text();
+
+
+        /*
+         * HLS
+         */
+        const hls =
+            html.match(
+                /(?:file|src|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i
+            )
+            ||
+            html.match(
+                /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i
+            );
+
+
+        if (hls) {
+
+            return {
+
+                url: hls[1],
+
+                headers
+
+            };
+
+        }
+
+
+        /*
+         * MP4
+         */
+        const mp4 =
+            html.match(
+                /(?:file|src|source)\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
+            )
+            ||
+            html.match(
+                /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i
+            );
+
+
+        if (mp4) {
+
+            return {
+
+                url: mp4[1],
+
+                headers
+
+            };
+
+        }
+
+
+        return null;
+
+
+    } catch (error) {
+
+        console.log(
+            "UQLoad extractor error:",
+            error
+        );
+
+        return null;
+
+    }
 
 }
 
@@ -505,36 +735,121 @@ async function uqloadExtractor(url){
 
 
 
-async function mp4uploadExtractor(url){
+/*
+ * =========================================================
+ * MP4UPLOAD EXTRACTOR
+ * =========================================================
+ */
 
-    const headers={
-        Referer:"https://mp4upload.com"
-    };
+async function mp4uploadExtractor(url) {
 
+    const headers = {
 
-    const res =
-        await fetchv2(url,headers);
+        "Referer":
+            "https://mp4upload.com/",
 
-
-    const html =
-        await res.text();
-
-
-    const match =
-        html.match(/player\.src\(\{\s*src:\s*"([^"]+)/i)
-        ||
-        html.match(/file:\s*"([^"]+\.mp4)/i);
-
-
-
-    return {
-
-        url:
-        match ? match[1] : null,
-
-        headers
+        "User-Agent":
+            "Mozilla/5.0"
 
     };
+
+
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
+
+
+        const html =
+            await res.text();
+
+
+        /*
+         * player.src
+         */
+        let match =
+            html.match(
+                /player\.src\s*\(\s*\{\s*src\s*:\s*["']([^"']+)["']/i
+            );
+
+
+        /*
+         * file:
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /file\s*:\s*["']([^"']+)["']/i
+                );
+
+        }
+
+
+        /*
+         * source:
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /source\s*:\s*["']([^"']+)["']/i
+                );
+
+        }
+
+
+        /*
+         * HLS
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i
+                );
+
+        }
+
+
+        /*
+         * MP4
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i
+                );
+
+        }
+
+
+        return {
+
+            url:
+                match
+                    ? match[1]
+                    : null,
+
+            headers
+
+        };
+
+
+    } catch (error) {
+
+        console.log(
+            "MP4Upload extractor error:",
+            error
+        );
+
+        return null;
+
+    }
 
 }
 
@@ -542,37 +857,107 @@ async function mp4uploadExtractor(url){
 
 
 
-async function vadbamExtractor(url){
+/*
+ * =========================================================
+ * VADBAM EXTRACTOR
+ * =========================================================
+ */
 
-    const headers={
-        Referer:url
-    };
+async function vadbamExtractor(url) {
 
+    const headers = {
 
-    const res =
-        await fetchv2(url,headers);
+        "Referer": url,
 
-
-    const html =
-        await res.text();
-
-
-
-    const match =
-        html.match(/file:\s*"([^"]+\.mp4)/i)
-        ||
-        html.match(/sources:\s*\[\{file:"([^"]+)/i);
-
-
-
-    return {
-
-        url:
-        match ? match[1] : null,
-
-        headers
+        "User-Agent":
+            "Mozilla/5.0"
 
     };
+
+
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
+
+
+        const html =
+            await res.text();
+
+
+        /*
+         * HLS أولاً
+         */
+        let match =
+            html.match(
+                /(?:file|src|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i
+            );
+
+
+        /*
+         * sources [{file:"..."}]
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                );
+
+        }
+
+
+        /*
+         * MP4
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /(?:file|src|source)\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
+                );
+
+        }
+
+
+        /*
+         * رابط مباشر داخل الصفحة
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i
+                );
+
+        }
+
+
+        return {
+
+            url:
+                match
+                    ? match[1]
+                    : null,
+
+            headers
+
+        };
+
+
+    } catch (error) {
+
+        console.log(
+            "Vadbam extractor error:",
+            error
+        );
+
+        return null;
+
+    }
 
 }
 
@@ -580,37 +965,107 @@ async function vadbamExtractor(url){
 
 
 
-async function anime4upExtractor(url){
+/*
+ * =========================================================
+ * ANIME4UP EXTRACTOR
+ * =========================================================
+ */
 
-    const headers={
-        Referer:url
-    };
+async function anime4upExtractor(url) {
 
+    const headers = {
 
-    const res =
-        await fetchv2(url,headers);
+        "Referer": url,
 
-
-    const html =
-        await res.text();
-
-
-
-    const match =
-        html.match(/file:\s*"([^"]+\.m3u8)/i)
-        ||
-        html.match(/source:\s*"([^"]+)/i);
-
-
-
-    return {
-
-        url:
-        match ? match[1] : null,
-
-        headers
+        "User-Agent":
+            "Mozilla/5.0"
 
     };
+
+
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
+
+
+        const html =
+            await res.text();
+
+
+        /*
+         * HLS
+         */
+        let match =
+            html.match(
+                /(?:file|src|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i
+            );
+
+
+        /*
+         * sources
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                );
+
+        }
+
+
+        /*
+         * MP4
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /(?:file|src|source)\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
+                );
+
+        }
+
+
+        /*
+         * رابط مباشر
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i
+                );
+
+        }
+
+
+        return {
+
+            url:
+                match
+                    ? match[1]
+                    : null,
+
+            headers
+
+        };
+
+
+    } catch (error) {
+
+        console.log(
+            "Anime4up extractor error:",
+            error
+        );
+
+        return null;
+
+    }
 
 }
 
@@ -618,36 +1073,205 @@ async function anime4upExtractor(url){
 
 
 
-async function share4maxExtractor(url){
+/*
+ * =========================================================
+ * SHARE4MAX EXTRACTOR
+ * =========================================================
+ */
 
-    const headers={
-        Referer:url
+async function share4maxExtractor(url) {
+
+    const headers = {
+
+        "Referer":
+            "https://share4max.com/",
+
+        "User-Agent":
+            "Mozilla/5.0"
+
+    };
+
+
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
+
+
+        const html =
+            await res.text();
+
+
+        /*
+         * HLS
+         */
+        let match =
+            html.match(
+                /(?:file|src|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i
+            );
+
+
+        /*
+         * sources
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']/i
+                );
+
+        }
+
+
+        /*
+         * MP4
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /(?:file|src|source)\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
+                );
+
+        }
+
+
+        /*
+         * رابط مباشر
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i
+                );
+
+        }
+
+
+        return {
+
+            url:
+                match
+                    ? match[1]
+                    : null,
+
+            headers
+
+        };
+
+
+    } catch (error) {
+
+        console.log(
+            "Share4Max extractor error:",
+            error
+        );
+
+        return null;
+
+    }
+
+}
+
+
+
+
+
+/*
+ * =========================================================
+ * GENERIC EXTRACTOR
+ * =========================================================
+ *
+ * يستخدم فقط مع أي سيرفر غير معروف.
+ * يحاول استخراج HLS أو MP4 بدون تغيير بنية النظام.
+ */
+
+async function genericStreamExtractor(url) {
+
+    const headers = {
+
+        "Referer": url,
+
+        "User-Agent":
+            "Mozilla/5.0"
+
     };
 
 
-    const res =
-        await fetchv2(url,headers);
+    try {
+
+        const res =
+            await fetchv2(
+                url,
+                headers
+            );
 
 
-    const html =
-        await res.text();
+        const html =
+            await res.text();
 
 
+        /*
+         * HLS
+         */
+        let match =
+            html.match(
+                /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i
+            );
 
-    const match =
-        html.match(/file:\s*"([^"]+\.m3u8)/i)
-        ||
-        html.match(/sources:\s*\[\{file:"([^"]+)/i);
+
+        /*
+         * MP4
+         */
+        if (!match) {
+
+            match =
+                html.match(
+                    /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i
+                );
+
+        }
 
 
+        /*
+         * file:
+         */
+        if (!match) {
 
-    return {
+            match =
+                html.match(
+                    /(?:file|src|source)\s*:\s*["']([^"']+)["']/i
+                );
 
-        url:
-        match ? match[1] : null,
+        }
 
-        headers
 
-    };
+        return {
+
+            url:
+                match
+                    ? match[1]
+                    : null,
+
+            headers
+
+        };
+
+
+    } catch (error) {
+
+        console.log(
+            "Generic extractor error:",
+            error
+        );
+
+        return null;
+
+    }
 
 }
